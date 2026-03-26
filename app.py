@@ -96,7 +96,7 @@ def find_awb_number(text: str) -> Optional[str]:
 
 def find_total_weight_kg(text: str) -> Optional[Decimal]:
     for raw_line in text.splitlines():
-        line = normalize_spaces(raw_line).strip()
+        line = normalize_spaces(raw_line).strip().lower()
 
         if "colli" not in line.lower():
             continue
