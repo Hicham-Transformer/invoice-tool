@@ -95,10 +95,10 @@ def find_awb_number(text: str) -> Optional[str]:
 
 
 def find_total_weight_kg(text: str) -> Optional[Decimal]:
-    matches = re.findall(r"\b(\d{2,4})\s+(\d{2,4},\d{2})", text)
+    match = re.search(r"COLLI.*?\n.*?(\d{2,4})\s+(\d{2,4},\d{2})", text, re.DOTALL)
 
-    if matches:
-        return Decimal(matches[-1][0])
+    if match:
+        return Decimal(match.group(1))
 
     return None
 
