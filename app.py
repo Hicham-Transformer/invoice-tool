@@ -19,7 +19,13 @@ except Exception:
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mission-freight-invoice-tool")
-WAREHOUSE_LABEL = "import warehouse charges"
+CHARGE_KEYWORDS = [
+    "import warehouse charges",
+    "handling",
+    "handling charges",
+    "handling fee"
+]
+
 
 
 @dataclass
@@ -89,18 +95,11 @@ def find_awb_number(text: str) -> Optional[str]:
 
 
 def find_total_weight_kg(text: str) -> Optional[Decimal]:
-    patterns = [
-        r"\(kgs\)\s*BRUTO.*?\n.*?([0-9][0-9\.,]*)",
-        r"BRUTO\s+([0-9][0-9\.,]*)",
-        r"BRUTOGEWICHT\s*[:\-]?\s*([0-9][0-9\.,]*)\s*KG",
-        r"WEIGHT\s*[:\-]?\s*([0-9][0-9\.,]*)\s*KG",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-        if match:
-            value = parse_decimal_eu(match.group(1))
-            if value is not None:
-                return value
+    matches = re.findall(r"\b(\d{2,4})\s+(\d{2,4},\d{2})", text)
+
+    if matches:
+        return Decimal(matches[-1][0])
+
     return None
 
 
@@ -108,15 +107,15 @@ def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
     total = Decimal("0")
     found = False
     for raw_line in text.splitlines():
-        line = normalize_spaces(raw_line).strip()
-        if WAREHOUSE_LABEL not in line.lower():
-            continue
-        amounts = re.findall(r"([0-9]{1,3}(?:[\.,][0-9]{3})*(?:,[0-9]{2})|[0-9]+,[0-9]{2}|[0-9]+\.[0-9]{2})", line)
-        if amounts:
-            amount = parse_decimal_eu(amounts[-1])
-            if amount is not None:
-                total += amount
-                found = True
+    line = normalize_spaces(raw_line).strip()
+    if not any(keyword in line.lower() for keyword in CHARGE_KEYWORDS):
+        continue
+    amounts = re.findall(r"([0-9]{1,3}(?:[\.,][0-9]{3})*(?:[\.,][0-9]{2}))", line)
+    if amounts:
+        amount = parse_decimal_eu(amounts[-1])
+        if amount is not None:
+            total += amount
+            found = True
     return total if found else None
 
 
