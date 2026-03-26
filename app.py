@@ -95,10 +95,21 @@ def find_awb_number(text: str) -> Optional[str]:
 
 
 def find_total_weight_kg(text: str) -> Optional[Decimal]:
-    match = re.search(r"COLLI.*?\n.*?(\d{2,4})\s+(\d{2,4},\d{2})", text, re.DOTALL)
+    for raw_line in text.splitlines():
+        line = normalize_spaces(raw_line).strip()
 
-    if match:
-        return Decimal(match.group(1))
+        if "colli" not in line.lower():
+            continue
+
+        numbers = re.findall(r"\b\d{2,4}(?:[.,]\d+)?\b", line)
+        if len(numbers) >= 2:
+            # Neem de voorlaatste waarde op de COLLI-regel
+            # Voorbeeld: 47 COLLI E-COMMERCE 505 505,00 -> 505
+            value = numbers[-2].replace(".", "").replace(",", ".")
+            try:
+                return Decimal(value)
+            except Exception:
+                pass
 
     return None
 
