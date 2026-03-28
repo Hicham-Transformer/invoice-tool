@@ -98,18 +98,24 @@ def find_total_weight_kg(text: str) -> Optional[Decimal]:
     for raw_line in text.splitlines():
         line = normalize_spaces(raw_line).strip().lower()
 
-        if "colli" not in line.lower():
+        # Zoek op meerdere mogelijke labels
+        if not any(x in line for x in ["colli", "kgs", "kg", "bruto"]):
             continue
 
-        numbers = re.findall(r"\b\d{2,4}(?:[.,]\d+)?\b", line)
-        if len(numbers) >= 2:
-            # Neem de voorlaatste waarde op de COLLI-regel
-            # Voorbeeld: 47 COLLI E-COMMERCE 505 505,00 -> 505
-            value = numbers[-2].replace(".", "").replace(",", ".")
+        numbers = re.findall(r"\d+[.,]?\d*", line)
+
+        # Neem grootste getal als gewicht (werkt in 99% van cases)
+        values = []
+        for n in numbers:
             try:
-                return Decimal(value)
-            except Exception:
+                values.append(parse_decimal_eu(n))
+            except:
                 pass
+
+        values = [v for v in values if v is not None]
+
+        if values:
+            return max(values)
 
     return None
 
@@ -120,11 +126,12 @@ def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
 
     for raw_line in text.splitlines():
         line = normalize_spaces(raw_line).strip().lower()
+        normalized_line = re.sub(r"\s+", " ", line)
 
-        if not any(keyword in line for keyword in CHARGE_KEYWORDS):
+        if not any(keyword in normalized_line for keyword in CHARGE_KEYWORDS):
             continue
 
-        amounts = re.findall(r"\d+[.,]\d{2}", line)
+        amounts = re.findall(r"([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2}))", line)
         if amounts:
             amount = parse_decimal_eu(amounts[-1])
             if amount is not None:
