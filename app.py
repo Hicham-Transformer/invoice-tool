@@ -95,51 +95,37 @@ def find_awb_number(text: str) -> Optional[str]:
 
 
 def find_total_weight_kg(text: str) -> Optional[Decimal]:
-    lines = [normalize_spaces(line).strip().lower() for line in text.splitlines()]
+    text = normalize_spaces(text)
 
-    bruto_index = None
-    for i, line in enumerate(lines):
-        if "bruto" in line:
-            bruto_index = i
-            break
+    # Zoek "BRUTO" gevolgd door een getal ergens erna
+    match = re.search(r"bruto.*?(\d{2,5}(?:[.,]\d+)?)", text, re.IGNORECASE | re.DOTALL)
 
-    if bruto_index is None:
-        return None
-
-    # Zoek in de eerstvolgende regels naar de goederenregel met colli
-    for line in lines[bruto_index + 1: bruto_index + 8]:
-        if "colli" not in line:
-            continue
-
-        numbers = re.findall(r"\d+(?:[.,]\d+)?", line)
-
-        # Verwacht patroon zoals:
-        # 47 colli e-commerce 505 505,00
-        if len(numbers) >= 3:
-            value = numbers[1]   # tweede getal = BRUTO
-            parsed = parse_decimal_eu(value)
-            if parsed is not None:
-                return parsed
+    if match:
+        value = match.group(1)
+        parsed = parse_decimal_eu(value)
+        if parsed is not None:
+            return parsed
 
     return None
 
 
 def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
+    text = normalize_spaces(text).lower()
+
+    matches = re.findall(
+        r"(import warehouse charges|handling).*?(\d+[.,]\d{2})",
+        text,
+        re.IGNORECASE
+    )
+
     total = Decimal("0")
     found = False
 
-    for raw_line in text.splitlines():
-        line = normalize_spaces(raw_line).strip().lower()
-
-        if "import warehouse charges" not in line and "handling" not in line:
-            continue
-
-        amounts = re.findall(r"\d+[.,]\d{2}", line)
-        if amounts:
-            amount = parse_decimal_eu(amounts[-1])
-            if amount is not None:
-                total += amount
-                found = True
+    for _, amount_str in matches:
+        amount = parse_decimal_eu(amount_str)
+        if amount is not None:
+            total += amount
+            found = True
 
     return total if found else None
 
