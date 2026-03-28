@@ -117,16 +117,20 @@ def find_total_weight_kg(text: str) -> Optional[Decimal]:
 def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
     total = Decimal("0")
     found = False
+
     for raw_line in text.splitlines():
-    line = normalize_spaces(raw_line).strip()
-    if not any(keyword in line.lower() for keyword in CHARGE_KEYWORDS):
-        continue
-    amounts = re.findall(r"([0-9]{1,3}(?:[\.,][0-9]{3})*(?:[\.,][0-9]{2}))", line)
-    if amounts:
-        amount = parse_decimal_eu(amounts[-1])
-        if amount is not None:
-            total += amount
-            found = True
+        line = normalize_spaces(raw_line).strip().lower()
+
+        if not any(keyword in line for keyword in CHARGE_KEYWORDS):
+            continue
+
+        amounts = re.findall(r"\d+[.,]\d{2}", line)
+        if amounts:
+            amount = parse_decimal_eu(amounts[-1])
+            if amount is not None:
+                total += amount
+                found = True
+
     return total if found else None
 
 
