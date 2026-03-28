@@ -128,8 +128,8 @@ def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
         line = normalize_spaces(raw_line).strip().lower()
         normalized_line = re.sub(r"\s+", " ", line)
 
-        if not any(keyword in normalized_line for keyword in CHARGE_KEYWORDS):
-            continue
+        if not any(all(word in normalized_line for word in keyword.split()) for keyword in CHARGE_KEYWORDS):
+    continue
 
         amounts = re.findall(r"([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2}))", line)
         if amounts:
