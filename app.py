@@ -95,21 +95,31 @@ def find_awb_number(text: str) -> Optional[str]:
 
 
 def find_total_weight_kg(text: str) -> Optional[Decimal]:
-    text = normalize_spaces(text)
+    normalized = normalize_spaces(text).lower()
 
-    # Zoek ALLE getallen rond COLLI blok
-    match = re.search(
-        r"colli.*?(\d{2,5})\s+(\d{2,5}(?:[.,]\d+)?)",
-        text,
+    # Probeer eerst expliciet de BRUTO-kolom te vinden en het getal erna.
+    bruto_match = re.search(
+        r"bruto[^0-9]{0,40}(\d{2,5}(?:[.,]\d+)?)",
+        normalized,
         re.IGNORECASE | re.DOTALL,
     )
-
-    if match:
-        # tweede getal = gewicht (niet colli)
-        value = match.group(2)
-        parsed = parse_decimal_eu(value)
+    if bruto_match:
+        parsed = parse_decimal_eu(bruto_match.group(1))
         if parsed is not None:
             return parsed
+
+    # Fallback: pak de goederenregel met COLLI
+    for raw_line in normalized.splitlines():
+        line = normalize_spaces(raw_line).strip()
+        if "colli" not in line:
+            continue
+
+        numbers = re.findall(r"\d+(?:[.,]\d+)?", line)
+        # Verwacht iets als: 47 colli e-commerce 505 505,00
+        if len(numbers) >= 3:
+            parsed = parse_decimal_eu(numbers[1])
+            if parsed is not None:
+                return parsed
 
     return None
 
@@ -118,7 +128,6 @@ def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
     total = Decimal("0")
     found = False
 
-    # Zoek over de hele tekst heen, niet per se per nette PDF-regel
     normalized_text = normalize_spaces(text).lower()
     normalized_text = re.sub(r"\s+", " ", normalized_text)
 
