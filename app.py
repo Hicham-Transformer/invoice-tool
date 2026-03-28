@@ -95,24 +95,21 @@ def find_awb_number(text: str) -> Optional[str]:
 
 
 def find_total_weight_kg(text: str) -> Optional[Decimal]:
-    # Zoek expliciet de goederenregel met COLLI
-    # Voorbeeld uit jouw PDF:
-    # 47 COLLI E-COMMERCE 505 505,00
-    for raw_line in text.splitlines():
-        line = normalize_spaces(raw_line).strip().lower()
+    text = normalize_spaces(text)
 
-        if "colli" not in line:
-            continue
+    # Zoek ALLE getallen rond COLLI blok
+    match = re.search(
+        r"colli.*?(\d{2,5})\s+(\d{2,5}(?:[.,]\d+)?)",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
 
-        numbers = re.findall(r"\d+(?:[.,]\d+)?", line)
-
-        # Verwacht:
-        # ["47", "505", "505,00"]
-        # Gewicht = tweede getal
-        if len(numbers) >= 3:
-            parsed = parse_decimal_eu(numbers[1])
-            if parsed is not None:
-                return parsed
+    if match:
+        # tweede getal = gewicht (niet colli)
+        value = match.group(2)
+        parsed = parse_decimal_eu(value)
+        if parsed is not None:
+            return parsed
 
     return None
 
