@@ -19,13 +19,13 @@ except Exception:
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mission-freight-invoice-tool")
+
 CHARGE_KEYWORDS = [
     "import warehouse charges",
     "handling",
     "handling charges",
-    "handling fee"
+    "handling fee",
 ]
-
 
 
 @dataclass
@@ -40,7 +40,7 @@ class InvoiceResult:
 
 
 def normalize_spaces(text: str) -> str:
-    text = text.replace("\xa0", " ")
+    text = text.replace("\xa0", " ").replace("\u200b", " ")
     text = re.sub(r"[ \t]+", " ", text)
     return text
 
@@ -95,31 +95,41 @@ def find_awb_number(text: str) -> Optional[str]:
 
 
 def find_total_weight_kg(text: str) -> Optional[Decimal]:
-    text = normalize_spaces(text)
+    # Zoek expliciet de goederenregel met COLLI
+    # Voorbeeld uit jouw PDF:
+    # 47 COLLI E-COMMERCE 505 505,00
+    for raw_line in text.splitlines():
+        line = normalize_spaces(raw_line).strip().lower()
 
-    # Zoek "BRUTO" gevolgd door een getal ergens erna
-    match = re.search(r"bruto.*?(\d{2,5}(?:[.,]\d+)?)", text, re.IGNORECASE | re.DOTALL)
+        if "colli" not in line:
+            continue
 
-    if match:
-        value = match.group(1)
-        parsed = parse_decimal_eu(value)
-        if parsed is not None:
-            return parsed
+        numbers = re.findall(r"\d+(?:[.,]\d+)?", line)
+
+        # Verwacht:
+        # ["47", "505", "505,00"]
+        # Gewicht = tweede getal
+        if len(numbers) >= 3:
+            parsed = parse_decimal_eu(numbers[1])
+            if parsed is not None:
+                return parsed
 
     return None
 
 
 def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
-    text = normalize_spaces(text).lower()
-
-    matches = re.findall(
-        r"(import warehouse charges|handling).*?(\d+[.,]\d{2})",
-        text,
-        re.IGNORECASE
-    )
-
     total = Decimal("0")
     found = False
+
+    # Zoek over de hele tekst heen, niet per se per nette PDF-regel
+    normalized_text = normalize_spaces(text).lower()
+    normalized_text = re.sub(r"\s+", " ", normalized_text)
+
+    matches = re.findall(
+        r"(import warehouse charges|handling|handling charges|handling fee).*?(\d+[.,]\d{2})",
+        normalized_text,
+        re.IGNORECASE,
+    )
 
     for _, amount_str in matches:
         amount = parse_decimal_eu(amount_str)
@@ -132,7 +142,8 @@ def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
 
 def parse_invoice(file_name: str, data: bytes) -> InvoiceResult:
     try:
-        text = normalize_spaces(extract_text_from_pdf_bytes(data))
+        text = extract_text_from_pdf_bytes(data)
+
         factuurnummer = find_invoice_number(text)
         awb_nummer = find_awb_number(text)
         totaal_kg = find_total_weight_kg(text)
@@ -305,7 +316,7 @@ HTML = """
   <div class="wrap">
     <div class="card">
       <h1>Mission Freight factuur uitlezer</h1>
-      <p>Upload één of meer Mission Freight PDF-facturen. De tool leest automatisch het factuurnummer, het AWB nummer en het totaal kg. Daarna berekent hij de prijs per kg op basis van alle regels <strong>Import warehouse charges</strong> gedeeld door het totale gewicht.</p>
+      <p>Upload één of meer Mission Freight PDF-facturen. De tool leest automatisch het factuurnummer, het AWB nummer en het totaal kg. Daarna berekent hij de prijs per kg op basis van alleen <strong>Import warehouse charges</strong> of <strong>Handling</strong>.</p>
       <div class="chips">
         <span class="chip">Mission Freight template</span>
         <span class="chip">Meerdere PDF's tegelijk</span>
