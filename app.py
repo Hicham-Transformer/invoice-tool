@@ -95,27 +95,31 @@ def find_awb_number(text: str) -> Optional[str]:
 
 
 def find_total_weight_kg(text: str) -> Optional[Decimal]:
-    for raw_line in text.splitlines():
-        line = normalize_spaces(raw_line).strip().lower()
+    lines = [normalize_spaces(line).strip().lower() for line in text.splitlines()]
 
-        # Zoek op meerdere mogelijke labels
-        if not any(x in line for x in ["colli", "kgs", "kg", "bruto"]):
+    bruto_index = None
+    for i, line in enumerate(lines):
+        if "bruto" in line:
+            bruto_index = i
+            break
+
+    if bruto_index is None:
+        return None
+
+    # Zoek in de eerstvolgende regels naar de goederenregel met colli
+    for line in lines[bruto_index + 1: bruto_index + 8]:
+        if "colli" not in line:
             continue
 
-        numbers = re.findall(r"\d+[.,]?\d*", line)
+        numbers = re.findall(r"\d+(?:[.,]\d+)?", line)
 
-        # Neem grootste getal als gewicht (werkt in 99% van cases)
-        values = []
-        for n in numbers:
-            try:
-                values.append(parse_decimal_eu(n))
-            except:
-                pass
-
-        values = [v for v in values if v is not None]
-
-        if values:
-            return max(values)
+        # Verwacht patroon zoals:
+        # 47 colli e-commerce 505 505,00
+        if len(numbers) >= 3:
+            value = numbers[1]   # tweede getal = BRUTO
+            parsed = parse_decimal_eu(value)
+            if parsed is not None:
+                return parsed
 
     return None
 
@@ -126,12 +130,11 @@ def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
 
     for raw_line in text.splitlines():
         line = normalize_spaces(raw_line).strip().lower()
-        normalized_line = re.sub(r"\s+", " ", line)
 
-        if not any(all(word in normalized_line for word in keyword.split()) for keyword in CHARGE_KEYWORDS):
-    continue
+        if "import warehouse charges" not in line and "handling" not in line:
+            continue
 
-        amounts = re.findall(r"([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2}))", line)
+        amounts = re.findall(r"\d+[.,]\d{2}", line)
         if amounts:
             amount = parse_decimal_eu(amounts[-1])
             if amount is not None:
