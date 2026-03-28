@@ -80,7 +80,6 @@ def extract_words_from_pdf_bytes(data: bytes):
     with fitz.open(stream=data, filetype="pdf") as doc:
         for page_index, page in enumerate(doc):
             for w in page.get_text("words"):
-                # PyMuPDF words: x0, y0, x1, y1, text, block_no, line_no, word_no
                 words.append((page_index, *w))
     return words
 
@@ -126,7 +125,6 @@ def find_total_weight_kg_from_words(words) -> Optional[Decimal]:
     if not bruto_words:
         return None
 
-    # Neem de laagste BRUTO van de eerste relevante pagina
     bruto_word = sorted(bruto_words, key=lambda w: (w[0], w[3], w[2]))[-1]
     b_page, bx0, by0, bx1, by1, _, _, _, _ = bruto_word
     bruto_center_x = (bx0 + bx1) / 2
@@ -144,11 +142,9 @@ def find_total_weight_kg_from_words(words) -> Optional[Decimal]:
 
         center_x = (x0 + x1) / 2
 
-        # Alleen onder BRUTO
         if y0 <= by1:
             continue
 
-        # Ongeveer zelfde kolom
         if abs(center_x - bruto_center_x) > 100:
             continue
 
@@ -166,20 +162,26 @@ def find_total_weight_kg_from_words(words) -> Optional[Decimal]:
 
 
 def sum_import_warehouse_charges(text: str) -> Optional[Decimal]:
+    """
+    Verbeterde versie:
+    - zoekt in de hele genormaliseerde tekst
+    - werkt ook als PDF de regel over meerdere stukjes splitst
+    - pakt zowel import warehouse charges als handling-varianten
+    """
     total = Decimal("0")
     found = False
 
-    lines = [normalize_spaces(line).strip().lower() for line in text.splitlines() if line.strip()]
+    normalized = normalize_spaces(text).lower()
+    normalized = re.sub(r"\s+", " ", normalized)
 
-    for line in lines:
-        if not any(keyword in line for keyword in CHARGE_KEYWORDS):
-            continue
+    matches = re.findall(
+        r"(import warehouse charges|handling|handling charges|handling fee).*?([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2}))",
+        normalized,
+        re.IGNORECASE,
+    )
 
-        amounts = re.findall(r"([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2}))", line)
-        if not amounts:
-            continue
-
-        amount = parse_decimal_eu(amounts[-1])
+    for _, amount_str in matches:
+        amount = parse_decimal_eu(amount_str)
         if amount is not None:
             total += amount
             found = True
