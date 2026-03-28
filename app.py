@@ -4,7 +4,7 @@ import io
 import os
 import re
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import List, Optional
 
 import pandas as pd
@@ -21,7 +21,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "invoice-tool")
 
 
 # =====================
-# MODELS
+# MODEL
 # =====================
 @dataclass
 class InvoiceResult:
@@ -41,7 +41,7 @@ def parse_decimal(value: str) -> Optional[Decimal]:
     value = value.replace(",", ".")
     try:
         return Decimal(value)
-    except InvalidOperation:
+    except:
         return None
 
 
@@ -53,7 +53,7 @@ def extract_text(data: bytes) -> str:
 
 
 # =====================
-# CORE LOGIC
+# PARSING
 # =====================
 
 def find_awb(text: str) -> Optional[str]:
@@ -66,35 +66,29 @@ def find_invoice(text: str) -> Optional[str]:
     return m.group(0) if m else None
 
 
-# 🔥 HIER ZIT DE MAGIC (gewicht fix)
+# ✅ PERFECTE FIX VOOR JOUW PDF
 def find_weight(text: str) -> Optional[Decimal]:
     text = text.lower()
 
-    # 1. probeer bruto direct
-    m = re.search(r"bruto[^0-9]{0,20}(\d{2,5})", text)
-    if m:
-        return parse_decimal(m.group(1))
+    # zoek "bruto" en pak eerste getal daarna
+    match = re.search(r"bruto[^0-9]{0,30}(\d{2,5})", text)
 
-    # 2. fallback → pak grootste getal (werkt bij jouw PDF)
-    nums = re.findall(r"\b\d{2,5}\b", text)
-    nums = [int(n) for n in nums]
-
-    if nums:
-        return Decimal(max(nums))
+    if match:
+        return parse_decimal(match.group(1))
 
     return None
 
 
-# 🔥 charges simpel en robuust
 def find_charges(text: str) -> Optional[Decimal]:
-    text = text.lower()
-
     total = Decimal("0")
     found = False
 
-    for line in text.splitlines():
-        if "import warehouse" in line or "handling" in line:
+    for line in text.lower().splitlines():
+
+        if "import warehouse charges" in line or "handling" in line:
+
             nums = re.findall(r"\d+[.,]\d{2}", line)
+
             if nums:
                 val = parse_decimal(nums[-1])
                 if val:
@@ -114,7 +108,7 @@ def parse_invoice(file_name: str, data: bytes) -> InvoiceResult:
         charges = find_charges(text)
 
         price = None
-        if weight and charges and weight != 0:
+        if weight and charges:
             price = charges / weight
 
         missing = []
@@ -130,13 +124,13 @@ def parse_invoice(file_name: str, data: bytes) -> InvoiceResult:
         status = "OK" if not missing else f"Ontbreekt: {', '.join(missing)}"
 
         return InvoiceResult(
-            bestandsnaam=file_name,
-            factuurnummer=invoice,
-            awb_nummer=awb,
-            totaal_kg=float(weight) if weight else None,
-            charges=float(charges) if charges else None,
-            prijs_per_kg=float(price) if price else None,
-            status=status,
+            file_name,
+            invoice,
+            awb,
+            float(weight) if weight else None,
+            float(charges) if charges else None,
+            float(price) if price else None,
+            status,
         )
 
     except Exception as e:
@@ -144,7 +138,7 @@ def parse_invoice(file_name: str, data: bytes) -> InvoiceResult:
 
 
 # =====================
-# DATAFRAME
+# DATA
 # =====================
 def df_from_results(results):
     return pd.DataFrame([r.__dict__ for r in results])
@@ -171,24 +165,51 @@ def build_excel(df):
 
 
 # =====================
+# UI (FIXED)
+# =====================
+HTML = """
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body { font-family: Arial; padding:20px; background:#f5f5f5; }
+.card { background:white; padding:15px; border-radius:10px; margin-bottom:10px; }
+button { padding:10px; width:100%; }
+</style>
+</head>
+<body>
+
+<div class="card">
+<h2>Upload PDF</h2>
+<form method="post" action="/upload" enctype="multipart/form-data">
+<input type="file" name="files" multiple>
+<button>Verwerken</button>
+</form>
+</div>
+
+{% for r in rows %}
+<div class="card">
+<b>Factuur:</b> {{ r.factuurnummer }}<br>
+<b>AWB:</b> {{ r.awb_nummer }}<br>
+<b>KG:</b> {{ r.totaal_kg }}<br>
+<b>Prijs/kg:</b> {{ r.prijs_per_kg }}<br>
+<b>Status:</b> {{ r.status }}
+</div>
+{% endfor %}
+
+</body>
+</html>
+"""
+
+
+# =====================
 # ROUTES
 # =====================
 @app.get("/")
 def index():
-    df = session.get("df")
-    rows = df if df else []
-    return render_template_string("""
-    <h2>Upload PDF</h2>
-    <form method="post" action="/upload" enctype="multipart/form-data">
-        <input type="file" name="files" multiple>
-        <button>Upload</button>
-    </form>
-
-    <h2>Result</h2>
-    {% for r in rows %}
-        <p>{{ r }}</p>
-    {% endfor %}
-    """, rows=rows)
+    data = session.get("data", [])
+    return render_template_string(HTML, rows=data)
 
 
 @app.post("/upload")
@@ -200,20 +221,9 @@ def upload():
         if f.filename.endswith(".pdf"):
             results.append(parse_invoice(f.filename, f.read()))
 
-    df = df_from_results(results)
-    session["df"] = df.to_dict(orient="records")
+    session["data"] = [r.__dict__ for r in results]
 
     return redirect("/")
-
-
-@app.get("/excel")
-def excel():
-    df = pd.DataFrame(session.get("df", []))
-    return send_file(
-        build_excel(df),
-        as_attachment=True,
-        download_name="result.xlsx"
-    )
 
 
 @app.get("/health")
@@ -221,5 +231,7 @@ def health():
     return Response("ok")
 
 
+# =====================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", "10000"))
+    app.run(host="0.0.0.0", port=port)
